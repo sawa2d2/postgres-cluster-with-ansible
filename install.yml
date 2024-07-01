@@ -1,0 +1,52 @@
+---
+- name: Install required packages
+  hosts: all
+  tasks:
+  - name: Install PosgreSQL@15
+    shell: sudo dnf install -y https://download.postgresql.org/pub/repos/yum/reporpms/EL-$(rpm -E %{rhel})-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+  - command: sudo dnf -qy module disable postgresql
+  - command: sudo dnf install -y postgresql15 postgresql15-server
+
+  - name: install dependencies
+    package:
+      state: present
+      name:
+        - python3
+        - python3-psycopg2
+  
+- name: Setup the primary node
+  hosts: primary
+  tasks:
+  - name: initialize database
+    command:
+      cmd: /usr/bin/postgresql-15-setup initdb
+  
+  - name: set auth to scram-sha-256
+    lineinfile:
+      path: /var/lib/pgsql/15/data/postgresql.conf
+      regexp: '^password_encryption'
+      line: "password_encryption = 'scram-sha-256'"
+
+  - name: Retart and enable database
+    service:
+      name: postgresql-15
+      state: restarted
+      enabled: yes
+  
+- name: Setup user and table
+  hosts: primary
+  become: true
+  become_user: postgres
+  tasks:
+  - name: create a postgres user
+    become_user: postgres
+    community.postgresql.postgresql_user:
+      name: "{{ user_name }}"
+      password: "{{ db_password }}"
+  
+  - name: create database
+    become_user: postgres
+    community.postgresql.postgresql_db:
+      name: "{{ user_name }}"
+      owner: "{{ user_name }}"
+  
