@@ -34,11 +34,40 @@
 - name: Setup the primary node
   hosts: standby
   become: yes
+  become_user: postgres
   vars:
     primary_ip: "{{ hostvars[groups['primary'][0]]['ansible_host'] }}"
   tasks:
-    #- name: Add replication entries to pg_hba.conf
-    #  command: rm -rf ${{ PGDATA }}
-
     - name: pgbackup 
-      command: pg_basebackup -R -D {{ PGDATA }} -h {{ primary_ip }} -U postgres
+      command: pg_basebackup -R -D {{ PGDATA }} -h {{ primary_ip }}
+
+- name: Setup the primary node
+  hosts: standby
+  vars:
+    primary_ip: "{{ hostvars[groups['primary'][0]]['ansible_host'] }}"
+  tasks:
+    - name: Add application_name to primary_conninfo
+      lineinfile:
+        path: "{{ PGDATA }}/postgresql.auto.conf"
+
+        regexp: '^primary_conninfo = '
+        #line: "{{ lookup('file', '{{ PGDATA }}/postgresql.auto.conf') | regex_replace('^(primary_conninfo = .*)$', '\\1 application_name=standby') }}"
+        line: "primary_conninfo = 'user=postgres passfile=''/var/lib/pgsql/.pgpass'' channel_binding=prefer host={{ primary_ip }} port=5432 sslmode=prefer sslcompression=0 sslsni=1 ssl_min_protocol_version=TLSv1.2 gssencmode=prefer krbsrvname=postgres target_session_attrs=any application_name=standby'"
+
+    - lineinfile:
+        path: "{{ PGDATA }}/postgresql.conf"
+        regexp: '^listen_address'
+        line: "#listen_addresses = '*'"
+    - lineinfile:
+        path: "{{ PGDATA }}/postgresql.conf"
+        regexp: '^max_wal_senders'
+        line: "#max_wal_senders = 10"
+    - lineinfile:
+        path: "{{ PGDATA }}/postgresql.conf"
+        regexp: '^synchronous_standby_names'
+        line: "#synchronous_standby_names = 'standby'"
+
+    - name: Retart and enable PostgreSQL
+      service:
+        name: postgresql-15
+        state: started
