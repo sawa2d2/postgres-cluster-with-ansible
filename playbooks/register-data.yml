@@ -1,0 +1,18 @@
+--- 
+- name: Setup user and table
+  hosts: primary
+  become: true
+  become_user: postgres
+  tasks:
+  - name: create a postgres user
+    become_user: postgres
+    community.postgresql.postgresql_user:
+      name: "{{ user_name }}"
+      password: "{{ db_password }}"
+  
+  - name: create database
+    become_user: postgres
+    community.postgresql.postgresql_db:
+      name: "{{ db_name }}"
+      owner: "{{ user_name }}"
+  

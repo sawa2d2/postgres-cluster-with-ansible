@@ -1,0 +1,44 @@
+---
+- name: Setup the primary node
+  hosts: primary
+  tasks:
+  - lineinfile:
+      path: "{{ PGDATA }}/postgresql.conf"
+      line: listen_addresses = '*'
+  - lineinfile:
+      path: "{{ PGDATA }}/postgresql.conf"
+      line: max_wal_senders = 10
+  - lineinfile:
+      path: "{{ PGDATA }}/postgresql.conf"
+      line: synchronous_standby_names = 'standby'
+
+- name: Setup the primary node
+  hosts: primary
+  become: yes
+  vars:
+    standby_ips: "{{ groups['standby'] | map('extract', hostvars, ['ansible_host']) | list }}"
+  tasks:
+    - name: Add replication entries to pg_hba.conf
+      lineinfile:
+        path: "{{ PGDATA }}/pg_hba.conf"
+        state: present
+        create: yes
+        line: "host    replication     all             {{ item }}/{{ cidr_prefix }}       trust"
+      loop: "{{ standby_ips }}"
+
+    - name: Retart and enable PostgreSQL
+      service:
+        name: postgresql-15
+        state: restarted
+
+- name: Setup the primary node
+  hosts: standby
+  become: yes
+  vars:
+    primary_ip: "{{ hostvars[groups['primary'][0]]['ansible_host'] }}"
+  tasks:
+    #- name: Add replication entries to pg_hba.conf
+    #  command: rm -rf ${{ PGDATA }}
+
+    - name: pgbackup 
+      command: pg_basebackup -R -D {{ PGDATA }} -h {{ primary_ip }} -U postgres
